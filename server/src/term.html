@@ -1,0 +1,1388 @@
+<!doctype html>
+  <html>
+    <head>
+      <link rel="stylesheet" href="xterm.css" />
+      <script src="xterm.js"></script>
+      <script src="xterm-addon-fit.js"></script>
+      <style>
+        .xterm .xterm-viewport {
+          /* On OS X this is required in order for the scroll bar to appear fully opaque */
+          background-color: transparent;
+          overflow-y: scroll;
+          cursor: default;
+          position: absolute;
+          right: 0;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          scrollbar-color: var(--highlight) var(--dark);
+          scrollbar-width: thin;
+        }
+        input {
+          text-transform: uppercase;
+        }
+        .xterm-viewport::-webkit-scrollbar {
+          background-color: var(--dark);
+          width: 5px;
+        }
+
+        .xterm-viewport::-webkit-scrollbar-thumb {
+          background: var(--highlight);
+        }
+        .border-relay {
+          border-style:solid;
+          /* border-color:#287EC7; */
+          border-width: 3px;
+          border-color: coral; 
+          width: max-content;
+          /* display: flex; */
+        }
+        table, th, td {
+          border: 1px solid;
+        }
+
+        body{
+          height: 100%;
+        }
+        /* Style the tab */
+        .tab {
+          overflow: hidden;
+          border: 1px solid #ccc;
+          background-color: #f1f1f1;
+        }
+
+        /* Style the buttons inside the tab */
+        .tab button {
+          background-color: inherit;
+          float: left;
+          border: none;
+          outline: none;
+          cursor: pointer;
+          padding: 14px 16px;
+          transition: 0.3s;
+          font-size: 17px;
+        }
+
+        /* Create an active/current tablink class */
+        .tab button.active {
+          background-color: #ccc;
+        }
+
+        /* Style the tab content */
+        .tabcontent {
+          height: auto;
+          display: none;
+          /* padding: 6px 12px; */
+          border: 1px solid #ccc;
+          border-top: none;
+          padding: auto;
+        }
+
+        /* OFF button */
+        .taboff {
+          height: auto;
+          /*display: none;*/
+          /* padding: 6px 12px; */
+          font-size: 20px;
+          border: 2px dotted rgb(232, 9, 9);
+          /* border-top: none; */
+          padding: auto;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="tab">
+        <button class="tablinks" onclick="openTab(event, 'Terminal')" id="defaultOpen">Terminal</button>
+        <button class="tablinks" onclick="openTab(event, 'Sniff')">Sniff</button>
+        <button class="tablinks" onclick="openTab(event, 'Relay')" id="relay_title">Relay</button>
+        <button class="tablinks" onclick="openTab(event, 'History')">History</button>
+        <button class="tablinks" onclick="openTab(event, 'Logs')">Logs</button>
+        <button style="border: 3px dotted rgb(232, 9, 9); color: red;" onclick="powerOff(true)">Turn Mole OFF</button>
+        <button style="border: 3px dotted rgb(232, 9, 9); color: red;" onclick="powerOff(false)">Turn Mole & Proxy OFF</button>
+      </div>
+      <div>
+        <div id="Terminal" class="tabcontent">
+          <div style="height: 85vh;" id="terminal"></div>
+          <button id="connect">connect</button>
+        </div>
+        <div id="Sniff" class="tabcontent">
+          <h3>Sniff 14A</h3>
+          <form id="sniffSubmit" name="sniffSubmit" action="/api/start_sniff" method="post">
+            <input type="checkbox" id="checkboxSniffPipe" name="checkboxSniffPipe" checked>
+            <label for="checkboxSniffPipe"> send data to pipe(fifo)</label><br>
+            <input type="checkbox" id="checkboxSniffCard" name="checkboxSniffCard">
+            <label for="checkboxSniffCard"> triggered by first data from card</label><br>
+            <input type="checkbox" id="checkboxSniffReader" name="checkboxSniffReader">
+            <label for="checkboxSniffReader"> triggered by first 7-bit request from reader (REQ,WUP,...)</label><br>
+
+            <button id="start_sniff" name="submit" value="START">START</button>
+            <button id="stop_sniff" value="STOP">STOP</button>
+            <p id="sniffReturn"></p>
+            <p id="sniffFileName"></p>
+          </form>
+          <textarea style="height: 65vh; width: 100%; " id="lastSniffContent" name="lastSniffContent" readonly>
+            
+          </textarea>
+        </div>
+        <div id="Relay" class="tabcontent">
+          <h3 style="display: inline-block;">Relay</h3>
+          <p style="color: red; display: inline-block;" id="mole_status"> Mole OFFLINE</p>
+
+          <form id="relaySubmit" name="relaySubmit" action="/api/start_relay" method="post">
+            <button id="start_relay" name="submit" value="START">START</button>
+            <button id="stop_relay" value="STOP">STOP</button>
+            <p id="relayReturn"></p>
+            <p id="relayFileName">Log file:</p>
+            <div>
+              <label for="inputUID">UID: </label>
+              <input type="text" id="inputUID" name="inputUID" size="32" oninput="isUidCorrectFormat();">
+              <label id="inputUIDfeedback"></label>
+              <label for="inputUID">Length must be: 4, 7 or 10 bytes ... ex:"12 23 44 55"</label>
+              <br><br>
+              <label for="inputATQA">ATQA: </label>
+              <input type="text" id="inputATQA" name="inputATQA" size="6" oninput="isAtqaCorrectFormat();">
+              <label id="inputATQAfeedback"></label>
+              <label for="inputATQA">2 bytes... ex:"03 04"</label>
+              <br><br>
+
+              <label for="inputSAK">SAK: </label>
+              <input type="text" id="inputSAK" name="inputSAK" size="3" oninput="isSakCorrectFormat();">
+              <label id="inputSAKfeedback"></label>
+              <label for="inputSAK">1 byte... ex:"20"</label>
+              <br><br>
+              <label for="inputATS">ATS: </label><br>
+              <textarea id="inputATS" name="inputATS" rows="2" cols="70" oninput="isAtsCorrectFormat();" style="text-transform:uppercase"></textarea>
+              <label id="inputATSfeedback"></label>
+              <br>
+              <label for="inputATS">Length must be between 2-100 bytes. CRC will be automatically appended.  ex:"0E 75 77 81 02 34 57 41 59 42 55 53 31 30"</label>
+              <br><br>
+
+              <label for="inputFWI">set FWI: </label>
+              <input type="text" id="inputFWI" name="inputFWI" size="2" oninput="isFwiCorrectFormat();">
+              <label id="inputFWIfeedback"></label>
+              <label for="inputFWI">half byte... 0-E ex:"8"</label>
+              <br><br>
+              <label for="inputSFGI">set SFGI: </label>
+              <input type="text" id="inputSFGI" name="inputSFGI" size="2" oninput="isSfgiCorrectFormat();">
+              <label id="inputSFGIfeedback"></label>
+              <label for="inputSFGI">half byte... 0-E ex:"8"</label>
+              <br><br>
+              <label for="checkboxTA1">set TA(1) to 0x00:</label>
+              <input type="checkbox" id="checkboxTA1" name="checkboxTA1">
+              <label for="checkboxTA1">PM3 only support 106 kbits/s !! Most systems dont use this feature...</label>
+              <br><br>
+              <div class="border-relay">
+              <h3>CHANGE DATA</h3>
+              <label for="inputChangeBPrev">(optional) previous bytes.....</label>
+              <label for="inputChangeBPrevC1">[first (x)/ second ( )] previous packet</label>
+              <input type="checkbox" id="inputChangeBPrevC1" name="inputChangeBPrevC1" checked>
+              <br>
+              <textarea id="inputChangeBPrev" name="inputChangeBPrev" rows="2" cols="70" oninput="isChangeHexCorrectFormat(2, 100, this, true, 'inputChangeBPrevfb');" style="text-transform:uppercase"></textarea>
+              <label id="inputChangeBPrevfb"></label>
+              <br>
+              <label for="inputChangeB">Change bytes:</label>
+              <label for="inputChangeBTag">send by [Tag (x)/ Reader ( )]</label>
+              <input type="checkbox" id="inputChangeBTag" name="inputChangeBTag" checked>
+              <br>
+              <textarea id="inputChangeB" name="inputChangeB" rows="2" cols="70" oninput="isChangeHexCorrectFormat(2, 100, this, true, 'inputChangeBfb');" style="text-transform:uppercase"></textarea>
+              <label id="inputChangeBfb"></label>
+              <br>
+              <label for="inputChangeBTo">change to:</label>
+              <br>
+              <textarea id="inputChangeBTo" name="inputChangeBTo" rows="2" cols="70" oninput="isChangeHexCorrectFormat(2, 100, this, true, 'inputChangeBTofb');" style="text-transform:uppercase"></textarea>
+              <label id="inputChangeBTofb"></label>
+              <br>
+              <label for="inputChangeSetCRC">, add CRC</label>
+              <input type="checkbox" id="inputChangeSetCRC" name="inputChangeSetCRC" checked>
+              <label for="inputChangeSetBlockNumber">, if I,R-block set block number</label>
+              <input type="checkbox" id="inputChangeSetBlockNumber" name="inputChangeSetBlockNumber" checked>
+
+              <button id="addButton_ChangeB" onclick="addChangeB(event);">ADD</button>
+              <label id="inputChangeBfeedback"></label>
+              <br><br>
+              <table id="tableChangeB">
+                <tr>
+                  <th>prev</th>
+                  <th>DO</th>
+                  <th>from</th>
+                  <th>Do</th>
+                  <th>set CRC, Block#</th>
+                  <th>REMOVE</th>
+                  <th>ENABLE</th>
+                </tr>
+              </table>
+              </div>
+              <br><br>
+              <div class="border-relay">
+              <h3>INSERT DATA</h3>
+              <label for="inputInsertB">Send bytes:</label>
+              <br>
+              <textarea id="inputInsertB" name="inputInsertB" rows="2" cols="70" oninput="isChangeHexCorrectFormat(2, 100, this, false, 'inputInsertBFb');" style="text-transform:uppercase"></textarea>
+              <label id="inputInsertBFb"></label>
+              <br>
+              <label for="inputInsertSetCRC">, add CRC</label>
+              <input type="checkbox" id="inputInsertSetCRC" name="inputInsertSetCRC" checked>
+              <label for="inputInsertSetBlockNumber">, if I or R-block set block number</label>
+              <input type="checkbox" id="inputInsertSetBlockNumber" name="inputInsertSetBlockNumber" checked>
+              <br>
+              <label for="inputInsertBTagRec">, after tag receives:</label>
+              <br>
+              <textarea id="inputInsertBTagRec" name="inputInsertBTagRec" rows="2" cols="70" oninput="isChangeHexCorrectFormat(2, 100, this, true, 'inputInsertBTagRecFb');" style="text-transform:uppercase"></textarea>
+              <label id="inputInsertBTagRecFb"></label>
+              <br>
+              <label for="inputInsertBTagSends">and after tag sends:</label>
+              <br>
+              <textarea id="inputInsertBTagSends" name="inputInsertBTagSends" rows="2" cols="70" oninput="isChangeHexCorrectFormat(2, 100, this, true, 'inputInsertBTagSendsFb');" style="text-transform:uppercase"></textarea>
+              <label id="inputInsertBTagSendsFb"></label>
+              <br>
+              <button id="addButton_InsertB" onclick="addInsertB(event);">ADD</button>
+              <label id="inputInsertBfeedback"></label>
+              <br><br>
+              <table id="tableInsertB">
+                <tr>
+                  <th>DO</th>
+                  <th>CRC, Block#</th>
+                  <th>When</th>
+                  <th>When</th>
+                  <th>REMOVE</th>
+                  <th>ENABLE</th>
+                </tr>
+              </table>
+            </div>
+            <br><br>
+            <div class="border-relay">
+              <h3>QUICK RESPONSE</h3>
+              <label for="inputQuickFirstB">Quick response to reader... First bytes:</label>
+              <br>
+              <input type="text" id="inputQuickFirstB" name="inputQuickFirstB" size="70" oninput="isChangeHexCorrectFormat(1, 100, this, true, 'inputQuickFirstBfb');">
+              <label for="inputQuickFirstB">ex:"E0 04"</label>
+              <label id="inputQuickFirstBfb"></label>
+              <br>
+              <label for="inputQuickStartsWith">startsWith bytes</label>
+              <input type="checkbox" id="inputQuickStartsWith" name="inputQuickStartsWith" checked>
+              <label for="inputQuickFixLen">, (optional) fix length</label>
+              <input type="number" id="inputQuickFixLen" name="inputQuickFixLen" size="5">
+              <br>
+              <label for="inputQuickResp">Response bytes:</label>
+              <br>
+              <textarea id="inputQuickResp" name="inputQuickResp" rows="2" cols="70" oninput="isChangeHexCorrectFormat(1, 100, this, false, 'inputQuickRespfb');" style="text-transform:uppercase"></textarea>
+              <label id="inputQuickRespfb"></label>
+              <br>
+              <label for="inputQuickRespCRC">add CRC</label>
+              <input type="checkbox" id="inputQuickRespCRC" name="inputQuickRespCRC" checked>
+              <br>
+              <button id="addButton_Quick" onclick="addQuick(event);">ADD</button>
+              <b></b><label id="inputQuickFb"></label></b>
+              <br><br>
+              <table id="tableQuick">
+                <tr>
+                  <th>if</th>
+                  <th>response</th>
+                  <th>REMOVE</th>
+                  <th>ENABLE</th>
+                </tr>
+              </table>
+            </div>
+            <br>
+            <div class="border-relay">
+              <h3>Test time</h3>
+              <label for="waitXms">Wait X ms before replying.</label>
+              <br>
+              <input type="number" id="waitXms" name="waitXms">
+              <label for="waitXms">ms</label>
+              <br>
+              <label for="waitMsOnlyI">Only 13334-4 I-block</label>
+              <input type="checkbox" id="waitMsOnlyI" name="waitMsOnlyI" checked>
+              <br>
+              <label>Send S(WTX)</label>
+              <input type="number" id="wtxTimeNum" value="59">
+              <input type="checkbox" id="wtxTime" name="wtxTime" checked>
+              <br>
+              <label>Send R(ACK)</label>
+              <input type="checkbox" id="dontTime" name="dontTime">
+              <br>
+              <label>Act like there is an error in transmission</label>
+              <input type="checkbox" id="errorTime" name="errorTime">
+              <br>
+              <label>RFU 1</label>
+              <input type="checkbox" id="rfu1Time" name="rfu1Time">
+              <label>RFU 2</label>
+              <input type="checkbox" id="rfu2Time" name="rfu2Time">
+              <label>RFU 3</label>
+              <input type="checkbox" id="rfu3Time" name="rfu3Time">
+              <br>
+              <label for="waitMsOnlyIf">If packet bytes are equal to:</label>
+              <br>
+              <input type="text" id="waitMsOnlyIf" name="waitMsOnlyIf" size="50" oninput="isChangeHexCorrectFormat(1, 50, this, true, 'waitMsOnlyIfFB');">
+              <label id="waitMsOnlyIfFB"></label>
+              <br>
+              <label for="waitMsStarts">starts with:</label>
+              <input type="checkbox" id="waitMsStarts" name="waitMsStarts" checked>
+              <br>
+            </div>
+
+            </div>
+          </form>
+          
+        </div>
+        <div id="History" class="tabcontent">
+          <h3 style="display: inline-block;">History</h3> 
+          <h4 style="color: green; display: inline-block;" id="shownHistoryFile"></h3>
+          <div>
+            <div style="width:30%; float: left;">
+              <div>
+                <input type="checkbox" id="checkboxShowSniff" name="checkboxShowSniff" onclick="showCheckedFiles();" checked>
+                <label for="checkboxShowSniff"> sniff  </label>
+                <input type="checkbox" id="checkboxShowMole" name="checkboxShowMole" onclick="showCheckedFiles();" checked>
+                <label for="checkboxShowMole"> mole  </label>
+                <input type="checkbox" id="checkboxShowProxy" name="checkboxShowProxy" onclick="showCheckedFiles();" checked>
+                <label for="checkboxShowProxy"> proxy  </label>
+              </div>
+              <table id="filesTable">
+                <tr>
+                  <th onclick="sortFileTable(0, 0)">File</th>
+                  <th onclick="sortFileTable(1, 2)">Modified</th>
+                  <th onclick="sortFileTable(2, 1)">Size</th>
+                </tr>
+              </table>
+              <button id="refreshFileTable">refresh</button>
+            </div>
+
+            <div style="width: 70%; float: left;">
+              <div>
+                <input type="checkbox" id="checkboxStartTime" name="checkboxStartTime" onclick="updateHistoryFileContent();">
+                <label for="checkboxStartTime"> Start time  </label>
+                <input type="checkbox" id="checkboxEndTime" name="checkboxEndTime" onclick="updateHistoryFileContent();">
+                <label for="checkboxEndTime"> End time  </label>
+                <input type="checkbox" id="checkboxTimeDiff" name="checkboxTimeDiff" onclick="updateHistoryFileContent();">
+                <label for="checkboxTimeDiff"> Time diff  </label>
+                <input type="checkbox" id="checkboxParity" name="checkboxParity" onclick="updateHistoryFileContent();">
+                <label for="checkboxParity"> CRC  </label>
+                <input type="checkbox" id="checkboxLength" name="checkboxLength" onclick="updateHistoryFileContent();" checked>
+                <label for="checkboxLength"> Length  </label>
+                <input type="checkbox" id="checkboxTag" name="checkboxTag" onclick="updateHistoryFileContent();" checked>
+                <label for="checkboxTag"> Tag  </label>
+                <input type="checkbox" id="checkboxDevice" name="checkboxDevice" onclick="updateHistoryFileContent();" checked>
+                <label for="checkboxDevice"> Reader  </label>
+                <input type="checkbox" id="checkboxRaw" name="checkboxRaw" onclick="updateHistoryFileContent();">
+                <label for="checkboxRaw"> RAW  </label>
+                <input type="checkbox" id="checkboxOrder" name="checkboxOrder" onclick="updateHistoryFileContent();">
+                <label for="checkboxOrder"> Order by time  </label>
+              </div>
+              
+              <textarea style="height: 90vh; width: 100%; " id="fileContent" name="fileContent" readonly>
+                click on file ....
+              </textarea>
+            </div>
+          </div>
+        </div>
+        <div id="Logs" class="tabcontent">
+          <div>
+            <input type="checkbox" id="checkboxScroll" name="checkboxScroll" checked>
+            <label for="checkboxScroll"> Auto scroll </label>
+
+            <input type="checkbox" id="checkboxFromPmMole" name="checkboxFromPmMole" onclick="updateShownLogs();" checked>
+            <label for="checkboxFromPmMole"> PM MOLE  </label>
+            <input type="checkbox" id="checkboxFromPmCMole" name="checkboxFromPmCMole" onclick="updateShownLogs();" checked>
+            <label for="checkboxFromPmCMole"> PM C MOLE  </label>
+            <input type="checkbox" id="checkboxFromMole" name="checkboxFromMole" onclick="updateShownLogs();" checked>
+            <label for="checkboxFromMole"> MOLE  </label>
+            <input type="checkbox" id="checkboxFromProxy" name="checkboxFromProxy" onclick="updateShownLogs();" checked>
+            <label for="checkboxFromProxy"> PROXY  </label>
+            <input type="checkbox" id="checkboxFromPmCProxy" name="checkboxFromPmCProxy" onclick="updateShownLogs();" checked>
+            <label for="checkboxFromPmCProxy"> PM C PROXY  </label>
+            <input type="checkbox" id="checkboxFromPmProxy" name="checkboxFromPmProxy" onclick="updateShownLogs();" checked>
+            <label for="checkboxFromPmProxy"> PM PROXY  </label>
+
+            <input type="checkbox" id="checkboxLevelTrace" name="checkboxLevelTrace" onclick="updateShownLogs();" checked>
+            <label for="checkboxLevelTrace"> TRACE </label>
+            <input type="checkbox" id="checkboxLevelDebug" name="checkboxLevelDebug" onclick="updateShownLogs();" checked>
+            <label for="checkboxLevelDebug"> DEBUG </label>
+            <input type="checkbox" id="checkboxLevelInfo" name="checkboxLevelInfo" onclick="updateShownLogs();" checked>
+            <label for="checkboxLevelInfo"> INFO </label>
+            <input type="checkbox" id="checkboxLevelWarning" name="checkboxLevelWarning" onclick="updateShownLogs();" checked>
+            <label for="checkboxLevelWarning"> WARNING </label>
+            <input type="checkbox" id="checkboxLevelError" name="checkboxLevelError" onclick="updateShownLogs();" checked>
+            <label for="checkboxLevelError"> ERROR </label>
+            <input type="checkbox" id="checkboxLevelFatal" name="checkboxLevelFatal" onclick="updateShownLogs();" checked>
+            <label for="checkboxLevelFatal"> FATAL </label>
+          </div>
+
+          <textarea style="height: 88vh; width: 100%; " id="logs" name="logs" readonly></textarea>
+        </div>
+      </div>
+
+
+
+      <script>
+        const HISTORY_DIR = "/history/";
+        var refreshSniff = false;
+        /* Tabs */
+        var E = function(id) { return document.getElementById(id); };
+        function openTab(evt, tabName) {
+          var i, tabcontent, tablinks;
+          tabcontent = document.getElementsByClassName("tabcontent");
+          for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+          }
+          tablinks = document.getElementsByClassName("tablinks");
+          for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].className = tablinks[i].className.replace(" active", "");
+          }
+          document.getElementById(tabName).style.display = "block";
+          evt.currentTarget.className += " active";
+          
+          if(tabName == "History"){
+            document.getElementById("refreshFileTable").click();
+          }
+          else if(tabName == "Sniff"){
+            loadLastSniffFile();
+          }
+          
+        }
+        document.getElementById("defaultOpen").click();
+
+
+        var changeUID_OK = false;
+        var changeATQA_OK = false;
+        var changeSAK_OK = false;
+        var changeATS_OK = false;
+        var changeFWI_OK = false;
+        var changeSFGI_OK = false;
+        
+        var addChangeB_OK = false;
+
+        var addInsertB_OK = false;
+        var rowC_IDs = 0; 
+        var rowD_IDs = 0;
+        var rowQ_IDs = 0;
+        var rowT_IDs = 0;
+
+        function isUidCorrectFormat(){
+          const regex = /^(([\dA-F]{2}[^\S\r\n]){4}|([\dA-F]{2}[^\S\r\n]){7}|([\dA-F]{2}[^\S\r\n]){10})$/mgs;
+          let text = inputUID.value.toString().toUpperCase().trim() + " ";
+          console.log("isUidCorrectFormat()", text, text.length);
+          if(text.length <= 1){
+            inputUIDfeedback.innerHTML = "";
+            changeUID_OK = false;
+            return;
+          }
+          if((m = regex.exec(text)) !== null){
+            inputUIDfeedback.innerHTML = "OK".bold();
+            inputUIDfeedback.style.color = "green";
+            changeUID_OK = true;
+          }else{
+            inputUIDfeedback.innerHTML = "NOT OK".bold();
+            inputUIDfeedback.style.color = "red";
+            changeUID_OK = false;
+          }
+        }
+
+        function isAtqaCorrectFormat(){
+          const regex = /^(([\dA-F]{2}[^\S\r\n]){2})$/mgs;
+          let text = inputATQA.value.toString().toUpperCase().trim() + " ";
+          console.log("isAtqaCorrectFormat()", text, text.length);
+          if(text.length <= 1){
+            inputATQAfeedback.innerHTML = "";
+            changeATQA_OK = false;
+            return;
+          }
+          if((m = regex.exec(text)) !== null){
+            inputATQAfeedback.innerHTML = "OK".bold();
+            inputATQAfeedback.style.color = "green";
+            changeATQA_OK = true;
+          }else{
+            inputATQAfeedback.innerHTML = "NOT OK".bold();
+            inputATQAfeedback.style.color = "red";
+            changeATQA_OK = false;
+          }
+        }
+
+        function isSakCorrectFormat(){
+          const regex = /^(([\dA-F]{2}[^\S\r\n]){1})$/mgs;
+          let text = inputSAK.value.toString().toUpperCase().trim() + " ";
+          console.log("isSakCorrectFormat()", text, text.length);
+          if(text.length <= 1){
+            inputSAKfeedback.innerHTML = "";
+            changeSAK_OK = false;
+            return;
+          }
+          if((m = regex.exec(text)) !== null){
+            inputSAKfeedback.innerHTML = "OK".bold();
+            inputSAKfeedback.style.color = "green";
+            changeSAK_OK = true;
+          }else{
+            inputSAKfeedback.innerHTML = "NOT OK".bold();
+            inputSAKfeedback.style.color = "red";
+            changeSAK_OK = false;
+          }
+        }
+
+        function isAtsCorrectFormat(){
+          const regex = /^(([\dA-F]{2}[^\S\r\n]){2,100})$/mgs;
+          let text = inputATS.value.toString().toUpperCase().trim() + " ";
+          console.log("isAtsCorrectFormat()", text, text.length);
+          if(text.length <= 1){
+            inputATSfeedback.innerHTML = "";
+            changeATS_OK = false;
+            return;
+          }
+          if((m = regex.exec(text)) !== null){
+            inputATSfeedback.innerHTML = "OK".bold();
+            inputATSfeedback.style.color = "green";
+            changeATS_OK = true;
+          }else{
+            inputATSfeedback.innerHTML = "NOT OK".bold();
+            inputATSfeedback.style.color = "red";
+            changeATS_OK = false;
+          }
+        }
+
+        function isFwiCorrectFormat(){
+          const regex = /^([\dA-E]{1})$/mgs;
+          let text = inputFWI.value.toString().toUpperCase().trim();
+          console.log("isFwiCorrectFormat()", text, text.length);
+          if(text.length == 0){
+            inputFWIfeedback.innerHTML = "";
+            changeFWI_OK = false;
+            return;
+          }
+          if((m = regex.exec(text)) !== null){
+            let num = parseInt(text, 16);
+            console.log(num);
+            inputFWIfeedback.innerHTML = ("OK  FWI:" + num + " => FWT: " + (((256*16/13560000)*Math.pow(2, num))*1000).toFixed(1) + " ms").bold();
+            inputFWIfeedback.style.color = "green";
+            changeFWI_OK = true;
+          }else{
+            inputFWIfeedback.innerHTML = "NOT OK".bold();
+            inputFWIfeedback.style.color = "red";
+            changeFWI_OK = false;
+          }
+        }
+
+        function isSfgiCorrectFormat(){
+          const regex = /^([\dA-E]{1})$/mgs;
+          let text = inputSFGI.value.toString().toUpperCase().trim();
+          console.log("isSfgiCorrectFormat()", text, text.length);
+          if(text.length == 0){
+            inputSFGIfeedback.innerHTML = "";
+            changeSFGI_OK = false;
+            return;
+          }
+          if((m = regex.exec(text)) !== null){
+            let num = parseInt(text, 16);
+            console.log(num);
+            inputSFGIfeedback.innerHTML = ("OK  SFGI:" + num + " => SFGI: " + (((256*16/13560000)*Math.pow(2, num))*1000).toFixed(1) + " ms").bold();
+            inputSFGIfeedback.style.color = "green";
+            changeSFGI_OK = true;
+          }else{
+            inputSFGIfeedback.innerHTML = "NOT OK".bold();
+            inputSFGIfeedback.style.color = "red";
+            changeSFGI_OK = false;
+          }
+        }
+
+        function isChangeHexCorrectFormat(minLen, maxLen, obj, x_char, label_fb){
+          var x = x_char?"X":"";
+          var regex = new RegExp("^([\\dA-F" + x + "]{2}[^\\S\\r\\n]){"+minLen+","+maxLen+"}$");
+          console.log(regex);
+          let text = obj.value.toString().toUpperCase().trim() + " ";
+          console.log("isChangeHexCorrectFormat(" + minLen + "," + maxLen + ',this,' + x_char + ')', text, text.length);
+          feedback = document.getElementById(label_fb);
+          var ok = false;
+          if(text.length <= 1){
+            feedback.innerHTML = "";
+            return;
+          }else{
+            if((m = regex.exec(text)) !== null){
+              feedback.innerHTML = "OK".bold();
+              feedback.style.color = "green";
+              ok = true;
+            }else{
+              feedback.innerHTML = "NOT OK".bold();
+              feedback.style.color = "red";
+            }
+          } 
+          if(label_fb.includes("ChangeB")){
+            addChangeB_OK = ok;
+          }else if(label_fb.includes("InsertB")){
+            addInsertB_OK = ok;
+          }
+        }
+
+        function addChangeB(e){
+          e = e || window.event;
+          e.preventDefault();
+          console.log("addChangeB()");
+          if(addChangeB_OK == false){
+            inputChangeBfeedback.style.color = "red";
+            inputChangeBfeedback.innerHTML = "NOT OK".bold();
+            return;
+          }
+          let textChangeBPrev = inputChangeBPrev.value.toString().toUpperCase().trim().replaceAll(" ", "");
+          let textChangeB = inputChangeB.value.toString().toUpperCase().trim().replaceAll(" ", "");
+          let textChangeBTo = inputChangeBTo.value.toString().toUpperCase().trim().replaceAll(" ", "");
+          if(textChangeB.length <= 3 || textChangeBTo.length <= 3){
+            inputChangeBfeedback.style.color = "red";
+            inputChangeBfeedback.innerHTML = "length to short".bold();
+            return;
+          }
+          let textFrom = (inputChangeBTag.checked?"Tag":"Reader");
+          let textPrev = (inputChangeBPrevC1.checked?"1st":"2nd");
+
+          let textCRC = inputChangeSetCRC.checked?"add CRC":"";
+
+          let textBN = inputChangeSetBlockNumber.checked?", set blocknumber":"";
+          rowC_IDs = rowC_IDs + 1;
+
+          data_row = "change$"+ textChangeB + "$" + (inputChangeBTag.checked?"T":"") + (inputChangeBPrevC1.checked?"P":"") +
+                    "$" + textChangeBTo + "$" + (inputChangeSetCRC.checked?"Y":"N") +
+                    "$" + (inputChangeSetBlockNumber.checked?"Y":"N") + "$" + textChangeBPrev;
+
+          let prev = "if previous(" + textPrev + ") bytes<br>" + textChangeBPrev;
+          if(textChangeBPrev.length == 0){prev = "";}
+
+          var html = "<tr id='rowC"+ rowC_IDs + "' data-row='" + data_row + "''><td>" + prev
+                  + "</td><td>change bytes:<br>" + textChangeB 
+                  + "</td><td>expected from:" + textFrom 
+                  + "</td><td>change to:<br>" + textChangeBTo + "</td><td>" + textCRC + textBN + "</td><td><button onclick='removeRowFromBTable(event," + rowC_IDs
+                  + ");'>REMOVE</button></td><td><input type='checkbox' checked></td></tr>";
+          tableChangeB.innerHTML = tableChangeB.innerHTML + html;
+          console.log(data_row);
+          console.log(tableChangeB.getElementsByTagName("tr")[tableChangeB.getElementsByTagName("tr").length -1].getAttribute("data-row"));
+          console.log(tableChangeB.getElementsByTagName("tr")[tableChangeB.getElementsByTagName("tr").length -1].getElementsByTagName("td")[6].getElementsByTagName("input")[0].checked);
+          inputChangeBfeedback.style.color = "green";
+          inputChangeBfeedback.innerHTML = "OK".bold();
+        }
+
+        function removeRowFromBTable(e, rowId){
+          e = e || window.event;
+          e.preventDefault();
+
+          var rows = tableChangeB.getElementsByTagName("tr");
+          for(var i = 0; i < rows.length; i++){
+            if(rows[i].id == "rowC" + rowId){
+              document.getElementById("rowC" + rowId).remove();
+              return;
+            }
+          }
+
+          rows = tableInsertB.getElementsByTagName("tr");
+          for(var i = 0; i < rows.length; i++){
+            if(rows[i].id == "rowD" + rowId){
+              document.getElementById("rowD" + rowId).remove();
+              return;
+            }
+          }
+
+          rows = tableQuick.getElementsByTagName("tr");
+          for(var i = 0; i < rows.length; i++){
+            if(rows[i].id == "rowQ" + rowId){
+              document.getElementById("rowQ" + rowId).remove();
+              return;
+            }
+          }
+
+          // rows = tableTestingTime.getElementsByTagName("tr");
+          // for(var i = 0; i < rows.length; i++){
+          //   if(rows[i].id == "rowT" + rowId){
+          //     document.getElementById("rowT" + rowId).remove();
+          //     return;
+          //   }
+          // }
+
+          console.log("rowId:" + rowId + " not found.");
+        }
+
+        function addInsertB(e){
+          e = e || window.event;
+          e.preventDefault();
+          console.log("addInsertB()");
+          if(addInsertB_OK == false){
+            inputInsertBfeedback.style.color = "red";
+            inputInsertBfeedback.innerText = "NOT OK";
+            return;
+          }
+          let textInsertB = inputInsertB.value.toString().toUpperCase().trim();
+          let textInsertBAfterTagR = inputInsertBTagRec.value.toString().toUpperCase().trim();
+          let textInsertBAfterTagS = inputInsertBTagSends.value.toString().toUpperCase().trim();
+
+
+          if(textInsertB.length <= 3 || (textInsertBAfterTagR.length <= 3 && textInsertBAfterTagS <= 3 )){
+            inputInsertBfeedback.style.color = "red";
+            inputInsertBfeedback.innerText = "length to short";
+            return;
+          }
+          let textCRC = inputInsertSetCRC.checked?", add CRC":"";
+
+          let textBN = inputInsertSetBlockNumber.checked?", set blocknumber":"";
+          rowD_IDs = rowD_IDs + 1;
+
+          data_row = "insert$"+ textInsertB.replaceAll(" ", "") + "$" + textInsertBAfterTagR.replaceAll(" ", "") + "$"
+                  + textInsertBAfterTagS.replaceAll(" ", "") + "$" + (inputInsertSetCRC.checked?"T":"")
+                  + (inputInsertSetBlockNumber.checked?"S":"");
+
+          var html = "<tr id='rowD"+ rowD_IDs + "' data-row=" + data_row + "><td>send bytes:<br>" + textInsertB 
+                  + "</td><td>to Tag" + textCRC + textBN + "</td><td>, after tag receives:<br>" + textInsertBAfterTagR + 
+                  "</td><td>and after tag sends:<br>" + textInsertBAfterTagS + "</td><td><button onclick='removeRowFromBTable(event," + rowD_IDs
+                  + ");'>REMOVE</button></td><td><input type='checkbox' checked></td></tr>";
+          tableInsertB.innerHTML = tableInsertB.innerHTML + html;
+          inputInsertBfeedback.style.color = "green";
+          inputInsertBfeedback.innerText = "OK";
+          console.log(data_row);
+        }
+
+
+        function addQuick(e){
+          e = e || window.event;
+          e.preventDefault();
+          console.log("addQuick()");
+          if(inputQuickRespfb.style.color != "green" || inputQuickFirstBfb.style.color != "green"){
+            inputQuickFb.style.color = "red";
+            inputQuickFb.innerHTML = "NOT OK".bold();
+            return;
+          }
+          let textFix = "";
+        
+          if(inputQuickFixLen.value >100 || inputQuickFixLen.value < 0){
+            inputQuickFb.style.color = "red";
+            inputQuickFb.innerHTML = "length must be between 0-100".bold();
+            return;
+          }else{
+            textFix = "<br>with len: " + inputQuickFixLen.value.toString();
+          }
+
+          let textQuickFirst = inputQuickFirstB.value.toString().toUpperCase().trim().replaceAll(" ", "");
+          let textQuickPrev = inputQuickResp.value.toString().toUpperCase().trim().replaceAll(" ", "");
+
+          // let textFix = "<br>with len: " + inputQuickFixLen.value.toString();
+          // let textFrom = (inputChangeBTag.checked?"T":"R");
+
+          rowQ_IDs = rowQ_IDs + 1;
+
+          data_row = "quick$"+ textQuickFirst + "$" + textQuickPrev + "$" + (inputQuickStartsWith.checked?"S":"") 
+                    + (inputQuickRespCRC.checked?"T":"") + "$" + inputQuickFixLen.value.toString();
+
+          var html = "<tr id='rowQ"+ rowQ_IDs + "' data-row='" + data_row 
+                  + "''><td>" + (inputQuickStartsWith.checked?"if received data starts with:<br>":"if proxy receives:<br>") 
+                  + textQuickFirst + textFix
+                  + "</td><td>response will be:<br>" + textQuickPrev + (inputQuickRespCRC.checked?" + CRC":"")
+                  + "</td><td><button onclick='removeRowFromBTable(event," + rowQ_IDs
+                  + ");'>REMOVE</button></td><td><input type='checkbox' checked></td></tr>";
+          tableQuick.innerHTML = tableQuick.innerHTML + html;
+          console.log(data_row);
+          console.log(tableQuick.getElementsByTagName("tr")[tableQuick.getElementsByTagName("tr").length -1].getAttribute("data-row"));
+          console.log(tableQuick.getElementsByTagName("tr")[tableQuick.getElementsByTagName("tr").length -1].getElementsByTagName("td")[3].getElementsByTagName("input")[0].checked);
+          inputQuickFb.style.color = "green";
+          inputQuickFb.innerHTML = "OK".bold();
+        }
+
+
+        function relayData(){
+          var text = "";
+          if(changeUID_OK){
+            text = text + "UID:" + inputUID.value.toString().toUpperCase().trim().replaceAll(" ", "") + "|";
+          }
+          if(changeATQA_OK){
+            text = text + "ATQA:" + inputATQA.value.toString().toUpperCase().trim().replaceAll(" ", "") + "|";
+          }
+          if(changeSAK_OK){
+            text = text + "SAK:" + inputSAK.value.toString().toUpperCase().trim() + "|";
+          }
+          if(changeATS_OK){
+            text = text + "ATS:" + inputATS.value.toString().toUpperCase().trim().replaceAll(" ", "") + "|";
+          }
+          if(changeFWI_OK){
+            text = text + "FWI:" + inputFWI.value.toString().toUpperCase().trim() + "0|";
+          }
+          if(changeSFGI_OK){
+            text = text + "SFGI:0" + inputSFGI.value.toString().toUpperCase().trim() + "|";
+          }
+          if(checkboxTA1.checked){
+            text = text + "TA1:01|";
+          }
+          var rows = tableChangeB.getElementsByTagName("tr");
+          for(var i = 1; i < rows.length; i++){
+            if(rows[i].getElementsByTagName("td")[6].getElementsByTagName("input")[0].checked){
+              text = text + rows[i].getAttribute("data-row") + "|";
+            }
+          }
+
+          rows = tableInsertB.getElementsByTagName("tr");
+          for(var i = 1; i < rows.length; i++){
+            if(rows[i].getElementsByTagName("td")[5].getElementsByTagName("input")[0].checked){
+              text = text + rows[i].getAttribute("data-row") + "|";
+            }
+          }
+
+          rows = tableQuick.getElementsByTagName("tr");
+          for(var i = 1; i < rows.length; i++){
+            if(rows[i].getElementsByTagName("td")[3].getElementsByTagName("input")[0].checked){
+              text = text + rows[i].getAttribute("data-row") + "|";
+            }
+          }
+
+          // rows = tableTestingTime.getElementsByTagName("tr");
+          // for(var i = 1; i < rows.length; i++){
+          //   //if(rows[i].getElementsByTagName("td")[4].getElementsByTagName("input")[0].checked){
+          //     text = text + rows[i].getAttribute("data-row") + "|";
+          //   //}
+          // }
+
+          if(waitXms.value > 0){
+            if(waitMsOnlyIfFB.style.color != "green"){
+
+            }
+            var c4 = "";
+            var sw = "";
+            if(waitMsOnlyI.checked){
+              c4 = "I";
+            }
+            if(waitMsStarts.checked){sw = sw + "S";}
+            if(wtxTime.checked){sw = sw + "W";}
+            if(dontTime.checked){sw = sw + "P";}
+            if(errorTime.checked){sw = sw + "L";}
+            if(rfu1Time.checked){sw = sw + "R";} // rfu 1
+            if(rfu2Time.checked){sw = sw + "T";}
+            if(rfu3Time.checked){sw = sw + "Y";}
+            var wtxm = wtxTimeNum.value;
+            if(wtxTimeNum.value > 59 || wtxTimeNum.value < 1){
+              wtxm = 59;
+            }
+            text = text + "time$" + waitXms.value.toString() + "$" + c4 + sw + "$" + wtxm + "$" + waitMsOnlyIf.value.toString().toUpperCase().trim().replaceAll(" ", "") + "|";
+          }
+
+          console.log(text);
+
+          // text = "FWI:A0|";
+          // text = text + "change$XX000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000091AFXXXX$TP$XX00212121204D49544D2061747461636B203A29202121210000000000000000000000002E2E2E205468697320697320612074657374202E2E2E000091AF$Y$Y$|";
+          // text = text + "change$XX000F20003A00340406E104040000009100XXXX$TP$XX0052656C61792061747461636B00009100$Y$Y$XX90BD0000070100000000000000XXXX|";
+          // text = text + "change$XX00XFX0XXXX00340406E104040000009100XXXX$TP$XX0052656C61792061747461636B00009100$Y$Y$XX90BD0000070100000000000000XXXX|";
+          // text = text + "change$0X000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009000XXXX$TP$0X0000000000000000000000000000000000000000000000000052656C61792061747461636B20627920416E6472656A204275726A6100000000009000$Y$Y$0X00B0029B3AXXXX|";
+          // text = text + "change$0X90640000010700XXXX$P$0X90640000010400$Y$Y$|"; // when reader asks for key(7) version give him answer for key(4) 
+          // text = text + "change$0X009100XXXX$TP$0X049100$Y$Y$0X90640000010200XXXX|"; // change key(2) version from 0 -> 4
+          // text = text + "insert$0290640000090000$0X90640000010000XXXX$0X009100XXXX$TS|";
+          // text = text + "insert$02906400000D0000$0X90640000090000XXXX$$TS|";
+          // text = text + "insert$02906400000A0000$$0XF28E9100XXXX$TS|";
+          // text = text + "quick$029060$0204010101001A0591AF$ST$|";
+          // text = text + "quick$039060$0304010101001A0591AF$ST$|";
+          // text = text + "quick$029060000000XXXX$0204010101001A0591AF$T$|";
+          // text = text + "quick$039060$0304010101001A0591AF$T$|";
+          // text = text + "time144434$2$0$|";
+          //text = text + "time144434$2$10$|";
+          // text = text + "time144434$1$0$|";
+          //text = text + "time144434$1$10$|";
+          // text = text + "time144434$3$0$3|";
+          // text = text + "time144434$3$30$3|";
+          // text = text + "time144434$3$300$50|";
+          // text = text + "time$30$IS$|";
+          return text;
+        }
+
+        /* Sniff */
+        function formSniffSubmit(event) {
+          var url = "/api/start_sniff";
+          var request = new XMLHttpRequest();
+          request.open('POST', url, true);
+          request.onload = function() {
+            console.log(request.responseText);
+            document.getElementById("sniffReturn").style.color = "green";
+            document.getElementById("sniffReturn").innerText = request.responseText;
+          };
+          
+          request.onerror = function() {
+            document.getElementById("sniffReturn").style.color = "red";
+            document.getElementById("sniffReturn").innerText = "error";
+          };
+          
+          event.preventDefault();
+          const form = document.querySelector('form');
+          const data = new URLSearchParams(new FormData(form).entries());
+          request.send(data);
+        }
+        function stopPM3(){
+          var url = "/api/stop_relay";
+          var request = new XMLHttpRequest();
+          request.open('POST', url, true);
+          event.preventDefault();
+          request.send("");
+        }
+        function powerOff(onlyMole){
+          var url = "/api/poweroff";
+          var request = new XMLHttpRequest();
+          request.open('POST', url, true);
+          event.preventDefault();
+          var params = "mole=on";
+          if( ! onlyMole){
+            params = params + "&proxy=on";
+          }
+          request.send(params);
+        }
+        document.getElementById("start_sniff").addEventListener("click", formSniffSubmit);
+        document.getElementById("stop_sniff").addEventListener("click", stopPM3);
+
+        function updateLastSniff(file, fileName){
+          document.getElementById("sniffFileName").innerText = "File: " + fileName;
+          var a_file = file.split("\n");
+          // TODO
+          if(true){
+            lastSniffContent.innerHTML = a_file.join(" \n");
+            lastSniffContent.scrollTop = lastSniffContent.scrollHeight;
+            return;
+          }
+        }
+        function loadLastSniffFile(){
+          var client = new XMLHttpRequest();
+          client.open('GET', "/api/lastSniffFile", true);
+
+          client.onreadystatechange = function() {
+            if(client.readyState==4){
+              console.log(client.responseText);
+
+              var a_file = client.responseText.split(" ");
+              if(client.responseText.startsWith("File: sniff")){
+                loadFile(a_file[1], 1);
+              }
+            }
+          }
+          client.send();
+        }
+
+        /* Relay */
+        function formRelaySubmit(event) {
+          var url = "/api/start_relay";
+          var request = new XMLHttpRequest();
+          request.open('POST', url, true);
+          request.onload = function() {
+            console.log(request.responseText);
+            document.getElementById("relayReturn").style.color = "green";
+            document.getElementById("relayReturn").innerText = request.responseText;
+          };
+          
+          request.onerror = function() {
+            document.getElementById("relayReturn").style.color = "red";
+            document.getElementById("relayReturn").innerText = "error";
+          };
+          
+          event.preventDefault();
+          const form = document.getElementById("Relay").querySelector('form');
+          const data = relayData();
+          request.send(data);
+        }
+        document.getElementById("start_relay").addEventListener("click", formRelaySubmit);
+        document.getElementById("stop_relay").addEventListener("click", stopPM3);
+
+        /* History */
+        var history_file = "";
+        var history_file_name = "";
+
+        function strKToInt(x){
+          let mul = 1;
+          if(x.innerHTML.toLowerCase().endsWith("k")){
+            mul = 1000;
+          }
+          x = x.innerHTML.toLowerCase().replace("k", "");
+          xx = x.split(".");
+          let x_num_last = 0;
+          if(xx.length == 2){
+            x_num_last = xx[1];
+            if(x_num_last < 10){
+              x_num_last = x_num_last * 100;
+            }else{
+              x_num_last = x_num_last * 10;
+            }
+          }
+          return (xx[0] * mul) + x_num_last;
+        }
+        function sortFileTable(n, str_num_date, sort_toggle = true) { // form w3schools.com but not all.
+          console.log("sortFileTable");
+          var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+          table = document.getElementById("filesTable");
+          switching = true;
+          dir = "asc";
+          if(sort_toggle == false){
+            dir = "desc";
+          }
+          while (switching) {
+            switching = false;
+            rows = table.rows;
+            for (i = 1; i < (rows.length - 1); i++) {
+              shouldSwitch = false;
+              x = rows[i].getElementsByTagName("TD")[n];
+              y = rows[i + 1].getElementsByTagName("TD")[n];
+
+              if (dir == "asc") {
+                if (str_num_date == 0 && x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) { //str
+                  shouldSwitch= true;
+                  break;
+                }else if(str_num_date == 1){ // num
+                  if(strKToInt(x) > strKToInt(y)){
+                    shouldSwitch= true;
+                    break;
+                  }
+                }else{ // date
+                  var date1 = new Date(x.innerHTML);
+                  var date2 = new Date(y.innerHTML);
+                  if(date1.getTime() > date2.getTime()){
+                    shouldSwitch= true;
+                    break;
+                  }
+                }
+              } else if (dir == "desc") {
+                if (str_num_date == 0 && (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase())) {
+                  shouldSwitch = true;
+                  break;
+                }else if(str_num_date == 1){ // num
+                  if(strKToInt(x) < strKToInt(y)){
+                    shouldSwitch= true;
+                    break;
+                  }
+                }else{ // date
+                  var date1 = new Date(x.innerHTML);
+                  var date2 = new Date(y.innerHTML);
+                  if(date1.getTime() < date2.getTime()){
+                    shouldSwitch= true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (shouldSwitch) {
+              rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+              switching = true;
+              switchcount++;      
+            } else {
+              if (sort_toggle && switchcount == 0 && dir == "asc") {
+                dir = "desc";
+                switching = true;
+              }
+            }
+          }
+        }
+
+        function updateHistoryFileContent(){
+          shownHistoryFile.innerText = " " + history_file_name;
+          var new_arr_file = [];
+          var a_file = history_file.split("\n");
+          if(checkboxRaw.checked){
+            fileContent.innerHTML = a_file.join(" \n");
+            return;
+          }
+          console.log(a_file.length);
+
+          if(checkboxOrder.checked){ // order by start time.
+            a_file.sort(function(a, b){
+              let x = a.split(" ")[2];
+              let y = b.split(" ")[2];
+              if(Math.abs(x-y) > 50000){
+                return false;
+              }else{
+                return a.split(" ")[2] - b.split(" ")[2];
+              }
+            });
+            console.log("ORDER");
+          }
+
+          for(let i = 0; i < a_file.length; i++){
+            var a_f = a_file[i].split(" ");
+            var new_f = "";
+
+            if(a_file[i].startsWith("T") && checkboxTag.checked){
+              new_f = "T ";
+            } else if((a_file[i].startsWith("D") || a_file[i].startsWith("R")) && checkboxDevice.checked){
+              new_f = "R ";
+            } else{
+              continue;
+            }
+            if(checkboxLength.checked){
+              new_f = new_f + a_f[1].padStart(2,' ') + " ";
+            }
+            if(checkboxStartTime.checked){
+              new_f = new_f + a_f[2] + " ";
+            }
+            if(checkboxEndTime.checked){
+              new_f = new_f + a_f[3] + " ";
+            }
+            if(checkboxTimeDiff.checked){
+              new_f = new_f + Math.abs(parseInt(a_f[3]) - parseInt(a_f[2])).toString().padStart(5,' ') + " ";
+            }
+            if(checkboxParity.checked){
+              new_f = new_f + a_f[4] + " ";
+            }
+            new_f = new_f + " ";
+            for(let j = 5; j < a_f.length; j++){
+              new_f = new_f + a_f[j] + " ";
+            }
+            new_arr_file.push(new_f + "\n");
+          }
+          fileContent.innerHTML = new_arr_file.join("");
+        }
+        function clearFileTable(){
+          var trueTable = document.getElementById("filesTable");
+          trueTable.innerHTML = "<tr><th onclick='sortFileTable(0, 0)'>File</th><th onclick='sortFileTable(1, 2)'>Modified</th><th onclick='sortFileTable(2, 1)'>Size</th></tr>";
+        }
+        function loadClickedFile(trhtml){
+          var fileName = trhtml.getElementsByTagName("td")[0].innerText;
+          console.log("Clicked file:", fileName);
+          loadFile(fileName, 0);
+        }
+        function loadFile(fileName, t, dir = HISTORY_DIR){
+          var client = new XMLHttpRequest();
+          client.open('GET', dir + fileName, true);
+
+          client.onreadystatechange = function() {
+            if(client.readyState==4){
+              console.log(client.responseText);
+              if(t == 0){ // History
+                history_file = client.responseText;
+                history_file_name = fileName;
+                updateHistoryFileContent();
+              }else if(t == 1){ // Last sniff file.
+                updateLastSniff(client.responseText, fileName);
+              }else if(t == 2){ // Last relay file.
+
+              }else if(t == 3){ // Logs
+
+              }
+            }
+          }
+          client.send();
+        }
+        function showCheckedFiles(){
+          var table = document.getElementById("filesTable");
+          var tr = table.getElementsByTagName("tr");
+          console.log("showCheckedFiles");
+          for(var i = 1; i < tr.length; i++){
+            // console.log();
+            var td0 = tr[i].getElementsByTagName("td")[0].innerText.toLowerCase();
+            console.log(td0);
+            if(td0.startsWith("sniff") && checkboxShowSniff.checked){
+              tr[i].style.display = '';
+            }else if(td0.startsWith("mole") && checkboxShowMole.checked){
+              tr[i].style.display = '';
+            }else if(td0.startsWith("proxy") && checkboxShowProxy.checked){
+              tr[i].style.display = '';
+            }else{
+              tr[i].style.display = 'none';
+            }
+          }
+        }
+        var refreshFileTable = E('refreshFileTable');
+        refreshFileTable.onclick = function() {
+          console.log("get files");
+          clearFileTable();
+          var client = new XMLHttpRequest();
+          //window.location.host
+          client.open('GET', HISTORY_DIR);
+
+          client.onreadystatechange = function() {
+            if(client.readyState==4 && client.status==200){
+              var parser = new DOMParser();
+              var htmlDoc = parser.parseFromString(client.responseText, 'text/html');
+              var table = htmlDoc.getElementsByTagName("tbody")[0].getElementsByTagName("tr");
+              console.log(table.length);
+              for(var i = 0; i < table.length; i++){
+                var tds = table[i].getElementsByTagName("td");
+
+                console.log(tds[0].innerText, tds[1].innerText, tds[2].innerText);
+                var tr = document.createElement("tr");
+                tr.setAttribute("onclick", "loadClickedFile(this)");
+                
+                for(var j = 0; j < 3; j++){
+                  var td = document.createElement("td");
+                  td.appendChild(document.createTextNode(tds[j].innerText));
+                  tr.appendChild(td);
+                }
+                document.getElementById("filesTable").appendChild(tr);
+              }
+              showCheckedFiles();
+              sortFileTable(1,2, false);
+            }
+          }
+          client.send();
+        };
+
+        var connect = E('connect');
+        var connectButtonEnabled = true;
+        var ws;
+        var lastSendData;
+        var startTime = window.performance.now();
+
+        var logFileLoc;
+
+        const term = new Terminal({
+          cursorBlink: true,
+          macOptionIsMeta: false,
+          scrollback: true,
+          convertEol: true,
+        });
+        const fit = new FitAddon.FitAddon();
+        term.loadAddon(fit);
+        term.open(document.getElementById('terminal'));
+        //term.resize(120, 30);
+        fit.fit();
+        //term.resize(term.cols, term.rows);
+        console.log(`size: c:${returnSizeStr(term.cols, 5)} r:${returnSizeStr(term.rows, 5)}`);
+        
+        term.writeln('START');
+        
+        term.onData((data) => {
+          console.log("out:  ", data);
+          console.log(data.split ('').map (function (c) { return c.charCodeAt (0); }));
+          startTime = window.performance.now();
+          ws.send(data);
+          lastSendData = data;
+        });
+        
+        connect.onclick = function() {
+          if(connectButtonEnabled){
+            start();
+          }
+          term.focus();
+        };
+        document.addEventListener("DOMContentLoaded", function(){
+          start();
+        });
+
+        /* Logs */
+        var log_file = "";
+        function loadLogFile(){
+          var client = new XMLHttpRequest();
+          client.open('GET', "/api/log_file", true);
+
+          client.onreadystatechange = function() {
+            if(client.readyState==4){
+              // console.log(client.responseText);
+
+              var a_file = client.responseText.split(" ");
+              if(client.responseText.startsWith("File: sniff")){
+                loadFile(a_file[1], 1);
+              }
+            }
+          }
+          client.send();
+        }
+        function arrayRemove(arr, value) {             
+            return arr.filter(function(ele){ 
+                return ! ele.toString().includes(value);
+                // return ele != value; 
+            });
+        }
+        function updateShownLogs(){
+          console.log("updateShownLogs()");
+          var a_file = log_file.split("\n");
+          // for(var i = 0; i < a_file.length; i++){
+            if(! checkboxFromPmMole.checked){
+              a_file = arrayRemove(a_file, " PM MOLE");
+            }
+            if(! checkboxFromPmCMole.checked){
+              a_file = arrayRemove(a_file, " PM C MOLE");
+            }
+            if(! checkboxFromMole.checked){
+              a_file = arrayRemove(a_file, " MOLE      ");
+            }
+            if(! checkboxFromProxy.checked){
+              a_file = arrayRemove(a_file, " PROXY     ");
+            }
+            if(! checkboxFromPmCProxy.checked){
+              a_file = arrayRemove(a_file, " PM C PROXY");
+            }
+            if(! checkboxFromPmProxy.checked){
+              a_file = arrayRemove(a_file, " PM PROXY");
+            }
+
+            if(! checkboxLevelTrace.checked){
+              a_file = arrayRemove(a_file, " TRACE  ");
+            }
+            if(! checkboxLevelDebug.checked){
+              a_file = arrayRemove(a_file, " DEBUG  ");
+            }
+            if(! checkboxLevelInfo.checked){
+              a_file = arrayRemove(a_file, " INFO   ");
+            }
+            if(! checkboxLevelWarning.checked){
+              a_file = arrayRemove(a_file, " WARNING");
+            }
+            if(! checkboxLevelError.checked){
+              a_file = arrayRemove(a_file, " ERORR  ");
+            }
+            if(! checkboxLevelFatal.checked){
+              a_file = arrayRemove(a_file, " FATAL  ");
+            }
+          // }
+
+          logs.innerHTML = a_file.join(" \n");
+        }
+
+        function returnSizeStr(num, strSize){
+          let returnStr = num.toString();
+          for(let i = returnStr.length; i <= strSize; i++){
+            returnStr += " ";
+          }
+          return returnStr;
+        }
+        function start(){
+          ws = new WebSocket("ws://" + location.host + "/websocket");
+          if (!ws) return;
+          ws.onopen = function() { 
+            connectButtonEnabled = false;
+            term.writeln('CONNECTION OPENED'); 
+            let strSize = `size: c:${returnSizeStr(term.cols, 5)} r:${returnSizeStr(term.rows, 5)}`;
+            console.log("sending", strSize, "len:", strSize.length);
+            ws.send(strSize);
+
+            ws.send("Where is log file?");
+            ws.send("Is Mole Online?");
+
+            ws.send("\n");
+          }
+          ws.onmessage = function(ev) { 
+            if(ev.data.toString().startsWith("file updated.")){
+              loadLastSniffFile();
+              return;
+            }else if(ev.data.toString().startsWith("#$&()&$#")){
+              var a_file = ev.data.toString().replace("#$&()&$#", "");
+              log_file += a_file;
+
+              a_file = a_file.split("\n");
+              logs.innerHTML = logs.innerHTML + a_file.join(" \n");
+              if(checkboxScroll.checked){
+                logs.scrollTop = logs.scrollHeight;
+              }
+              return;
+              // logs.innerHTML = logs.innerHTML + ev.data.toString().replace("#$&()&$#", "");
+            }else if(ev.data.toString().startsWith("log file is here:")){
+              logFileLoc = ev.data.toString().replace("log file is here:", "");
+              console.log(logFileLoc);
+              return;
+            }else if(ev.data.toString().startsWith("mole online.")){
+              document.getElementById("mole_status").innerText = " Mole: ONLINE";
+              document.getElementById("mole_status").style.color = "green";
+              document.getElementById("relay_title").style.color = "green";
+              return;
+            }else if(ev.data.toString().startsWith("mole offline.")){
+              document.getElementById("mole_status").innerText = " Mole: OFFLINE";
+              document.getElementById("mole_status").style.color = "red";
+              document.getElementById("relay_title").style.color = "red";
+              return;
+            }
+            term.write(ev.data); 
+            // if(lastSendData == ev.data){
+            //   console.log("data:", ev.data, "   time: ", startTime - window.performance.now(), " ms"); 
+            // }else{
+            //   console.log("data:", ev.data); 
+            // }
+          }
+          ws.onerror = function(ev) { 
+            term.writeln('ERROR: ' + ev); 
+            console.log('ERROR:', ev); 
+          }
+          ws.onclose = function() { 
+            connectButtonEnabled = true;
+            term.writeln('\nCONNECTION CLOSED');
+          }
+        }
+    
+      </script>
+    </body>
+  </html>

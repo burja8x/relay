@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "typeinfo": "c",
+        "pipe_data.h": "c",
+        "time.h": "c"
+    }
+}

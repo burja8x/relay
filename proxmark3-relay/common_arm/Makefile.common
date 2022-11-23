@@ -1,0 +1,157 @@
+#-----------------------------------------------------------------------------
+# Copyright (C) Proxmark3 contributors. See AUTHORS.md for details.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# See LICENSE.txt for the text of the license.
+#-----------------------------------------------------------------------------
+# Common makefile functions for all platforms
+#-----------------------------------------------------------------------------
+
+# Make sure that all is the default target
+# (The including Makefile still needs to define what 'all' is)
+
+all:
+
+# This Makefile might have been called from various subdirs, trying to find our Makefile.defs
+ifeq ($(DEFSBEENHERE),)
+    -include Makefile.defs
+endif
+ifeq ($(DEFSBEENHERE),)
+    -include ../Makefile.defs
+endif
+ifeq ($(DEFSBEENHERE),)
+    -include ../../Makefile.defs
+endif
+ifeq ($(DEFSBEENHERE),)
+    $(error Can't find Makefile.defs)
+endif
+
+CROSS_CC = $(CROSS)gcc
+CROSS_LD = $(CROSS)gcc
+CROSS_OBJCOPY = $(CROSS)objcopy
+
+OBJDIR = obj
+
+INCLUDE = -I../include -I../common_arm -I../common_fpga -I../common -I.
+
+# Also search prerequisites in the common directory (for usb.c), the fpga directory (for fpga.bit), and the lz4 directory
+VPATH = . ../common_arm ../common ../common/crapto1 ../common/mbedtls ../common/lz4 ../fpga-$(PLATFORM_FPGA) ../armsrc/Standalone
+
+INCLUDES = ../include/proxmark3_arm.h ../include/at91sam7s512.h ../include/config_gpio.h ../include/pm3_cmd.h
+
+ARMCFLAGS = -mthumb-interwork -fno-builtin
+DEFCFLAGS = -Wall -Os -pedantic -fstrict-aliasing -pipe
+
+# Some more warnings we want as errors:
+DEFCFLAGS += -Wbad-function-cast -Wchar-subscripts -Wundef -Wunused -Wuninitialized -Wpointer-arith -Wformat -Wformat-security -Winit-self -Wmissing-include-dirs -Wnested-externs -Wempty-body -Wignored-qualifiers -Wmissing-field-initializers -Wtype-limits
+
+# Some more warnings we need first to eliminate, so temporarely tolerated:
+DEFCFLAGS += -Wshadow -Wno-error=shadow
+DEFCFLAGS += -Winline -Wno-error=inline
+DEFCFLAGS += -Wmissing-prototypes -Wno-error=missing-prototypes
+DEFCFLAGS += -Wmissing-declarations  -Wno-error=missing-declarations
+DEFCFLAGS += -Wstrict-prototypes -Wno-error=strict-prototypes
+# still vsnprintf etc to sort out...
+#DEFCFLAGS += -Wredundant-decls -Wno-error=redundant-decls
+#DEFCFLAGS += -Wcast-align -Wno-error=cast-align
+
+# Next ones are activated only if GCCEXTRA=1
+EXTRACFLAGS =
+EXTRACFLAGS += -Wunused-parameter -Wno-error=unused-parameter
+EXTRACFLAGS += -Wswitch-enum -Wno-error=switch-enum
+EXTRACFLAGS += -Wsign-compare -Wno-error=sign-compare
+EXTRACFLAGS += -Wold-style-definition -Wno-error=old-style-definition
+EXTRACFLAGS += -Wconversion -Wno-error=conversion -Wno-error=sign-conversion -Wno-error=float-conversion
+
+# unknown to clang or old gcc:
+# First we activate Wextra then we explicitly list those we know about
+# Those without -Wno-error are supposed to be completely solved
+GCCEXTRACFLAGS = -Wextra
+# unknown to arm-none-eabi/4.9.3
+GCCEXTRACFLAGS += -Wwrite-strings -Wno-error=discarded-qualifiers
+
+GCCEXTRACFLAGS += -Wold-style-declaration -Wno-error=old-style-declaration
+GCCEXTRACFLAGS += -Wimplicit-fallthrough=3 -Wno-error=implicit-fallthrough
+GCCEXTRACFLAGS += -Wclobbered
+GCCEXTRACFLAGS += -Wcast-function-type
+GCCEXTRACFLAGS += -Wmissing-parameter-type
+GCCEXTRACFLAGS += -Woverride-init
+GCCEXTRACFLAGS += -Wshift-negative-value
+GCCEXTRACFLAGS += -Wunused-but-set-parameter
+# Not yet enabled in DEFCFLAGS:
+GCCEXTRACFLAGS += -Wredundant-decls -Wno-error=redundant-decls
+GCCEXTRACFLAGS += -Wcast-align -Wno-error=cast-align
+
+ifeq ($(GCCEXTRA),1)
+  DEFCFLAGS += $(GCCEXTRACFLAGS) $(EXTRACFLAGS)
+endif
+ifeq ($(NOERROR),1)
+  DEFCFLAGS += -Wno-error
+endif
+
+CROSS_CFLAGS ?= $(DEFCFLAGS)
+CROSS_CFLAGS += $(ARMCFLAGS) -c $(INCLUDE) -std=c99 -DON_DEVICE $(APP_CFLAGS)
+
+CROSS_LDFLAGS += -nostartfiles -nodefaultlibs -Wl,-gc-sections -Wl,--build-id=none -n
+LIBS = -lgcc
+
+# Flags to generate temporary dependency files
+DEPFLAGS = -MT $@ -MMD -MP -MF $(OBJDIR)/$*.Td
+# make temporary to final dependency files after successful compilation
+POSTCOMPILE = $(MV) -f $(OBJDIR)/$*.Td $(OBJDIR)/$*.d
+
+THUMBOBJ = $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(THUMBSRC)))
+ARMOBJ   = $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(ARMSRC)))
+ASMOBJ   = $(patsubst %.s,$(OBJDIR)/%.o,$(notdir $(ASMSRC)))
+VERSIONOBJ = $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(VERSIONSRC)))
+
+$(THUMBOBJ): $(OBJDIR)/%.o: %.c $(INCLUDES)
+	$(info [-] CC $<)
+	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) $(DEPFLAGS) -mthumb -o $@ $<
+	$(Q)$(POSTCOMPILE)
+
+$(ARMOBJ): $(OBJDIR)/%.o: %.c $(INCLUDES)
+	$(info [-] CC $<)
+	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) $(DEPFLAGS) -o $@ $<
+	$(Q)$(POSTCOMPILE)
+
+$(ASMOBJ): $(OBJDIR)/%.o: %.s
+	$(info [-] CC $<)
+	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) -o $@ $<
+
+$(VERSIONOBJ): $(OBJDIR)/%.o: %.c $(INCLUDES)
+	$(info [-] CC $<)
+	$(Q)$(CROSS_CC) $(CROSS_CFLAGS) -mthumb -o $@ $<
+
+# This objcopy call translates physical flash addresses to logical addresses
+# without touching start address or RAM addresses (.bss and .data sections)
+# See ldscript.common. -- Henryk Plötz <henryk@ploetzli.ch> 2009-08-27
+OBJCOPY_TRANSLATIONS = --no-change-warnings \
+    --change-addresses -0x100000 --change-start 0 \
+    --change-section-address .bss+0 --change-section-address .data-0x100000 \
+    --change-section-address .commonarea+0
+$(OBJDIR)/%.s19: $(OBJDIR)/%.elf
+	$(info [=] GEN $@)
+	$(Q)$(CROSS_OBJCOPY) -Osrec --srec-forceS3 --strip-debug $(OBJCOPY_TRANSLATIONS) $^ $@
+
+# easy printing of MAKE VARIABLES
+print-%: ; @echo $* = $($*)
+
+# Automatic dependency generation
+DEPENDENCY_FILES = $(patsubst %.c,$(OBJDIR)/%.d,$(notdir $(THUMBSRC))) \
+	$(patsubst %.c,$(OBJDIR)/%.d,$(notdir $(ARMSRC))) \
+	$(patsubst %.s,$(OBJDIR)/%.d,$(notdir $(ASMSRC)))
+
+$(DEPENDENCY_FILES): Makefile ../common_arm/Makefile.common
+.PRECIOUS: $(DEPENDENCY_FILES)
+
+-include $(DEPENDENCY_FILES)
