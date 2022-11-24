@@ -4,7 +4,7 @@ The tool is the product of a master's thesis (A tool for performing relay attack
 
 Relay attack works best when using standard ISO/IEC 14443-4 type A.
 
-The goal of the master's thesis was to create a tool for performing a relay attack. The purpose of the tool is to perform a simple relay attack. We can also change and add mutual communication. The tool has a user interface that is used to set up the attack and display the execution of the attack.
+The purpose of the tool is to perform a simple relay attack. We can also change and add mutual communication. The tool has a user interface that is used to set up the attack and display the execution of the attack.
 
 How the tool works is shown in the image below.
 ![how_it_works](https://github.com/burja8x/relay/blob/main/img/relay_en.png?raw=true)
@@ -36,7 +36,7 @@ Relay attack does not work on systems using MIFARE Classic (relay attack is too 
 During testing, we found that the relay tool (in our case) delayed each communication (in both directions) by an average of 25 ms.
 
 ###User interface
-You can easily change tag information (UID, ATQA, SAK, ATS) in the user interface. You can also change the rest of the communication, if you dont know the block numbers and CRC, you can use a later "X" in these places. This allows any character to be in that position.
+You can easily change tag information (UID, ATQA, SAK, ATS) in the user interface. You can also change the rest of the communication, if you don't know the block numbers and CRC, you can use a latter "X" in these places. This allows any character to be in that position.
 
 User interface has 5 tabs:
 - **Terminal** Is a normal console. (don't forget that you expose the console to everyone on the network! If you want, you can comment in the code, the input data that comes from the network)
@@ -45,13 +45,12 @@ User interface has 5 tabs:
 - **History** In this tab you can view the communication history (sniff, mole, proxy).
 - **Logs** When you start a relay attack, this tab is the most useful, it shows communication and all events...
 
-You can easily change tag information (UID, ATQA, SAK, ATS) in the user interface. You can also change the rest of the communication, if you don't know the block numbers and CRC, you can use a later "X" in these places. This allows any character to be in that position.
 
 ### Install the required dependencies
 
 `sudo apt-get install libbz2-dev libreadline-dev clang binutils tmux gcc-arm-none-eabi`
 
-If you are missing some default tool, you can find other dependencies on the "Iceman Fork - Proxmark3" Github page.
+If you are missing some default tools, you can find other dependencies on the "Iceman Fork - Proxmark3" Github page.
 
 ### Compile and upload
 
