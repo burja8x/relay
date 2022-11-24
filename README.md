@@ -19,17 +19,17 @@ The tool is using other tools/libraries:
 
 
 ###How it works
--Mole selects a tag (passes the obtained data (UID, ATQA, SAK, ATS) to the proxy device).
--The proxy reads the data and starts the emulation phase. The proxy thus fully imitates the tag.
--Then relay communication flows (RAW commands are transmitted).
+- Mole selects a tag (passes the obtained data (UID, ATQA, SAK, ATS) to the proxy device).
+- The proxy reads the data and starts the emulation phase. The proxy thus fully imitates the tag.
+- Then relay communication flows (RAW commands are transmitted).
 
 The tool uses additional commands (WTX) to try to gain more time if necessary.
 
 ###Testing
--Tested on access control using MIFARE DESFire EV1, EV2 (without "Proximity check" functionality used)
--Tested between tag DESFire and TagInfo app (Android).
--It also works when we use a smartphone (Android) in emulation mode.
--etc.
+- Tested on access control using MIFARE DESFire EV1, EV2 (without "Proximity check" functionality used)
+- Tested between tag DESFire and TagInfo app (Android).
+- It also works when we use a smartphone (Android) in emulation mode.
+- etc.
 
 Relay attack does not work on systems using MIFARE Classic (relay attack is too slow).
 
